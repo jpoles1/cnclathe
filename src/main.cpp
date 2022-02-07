@@ -8,22 +8,23 @@ ulong encoder_last_read;
 UI ui;
 FlexyStepper leadscrew;
 
-int leadscrew_tpi = 16;
-float leadscrew_pitch = 1.588;
-float metric_pitch_to_leadscrew_rpm(float thread_pitch, float spindle_rpm) {
-  return spindle_rpm * thread_pitch / leadscrew_pitch;
-}
+uint64_t encoder_last_count = 0;
 
 float read_spindle_rpm() {
+  uint64_t encoder_count = encoder.getCount();
   ulong now = millis();
   ulong ms_elapsed = now - encoder_last_read;
   encoder_last_read = now;
-  int encoder_count = encoder.getCount();
-  encoder.clearCount();
   const int quadrature_mult = 2;
-  float deg_turned = encoder_count * 360 / (600 * quadrature_mult);
-  float rot_turned = deg_turned / 360;
-  float rpm = 1000 * 60 * rot_turned / ms_elapsed; 
+  int steps_moved = encoder_count - encoder_last_count;
+  encoder_last_count = encoder_count;
+  float rev_turned = (float)steps_moved / (float)(600 * quadrature_mult);
+  int rpm = round(1000 * 60 * rev_turned / ms_elapsed); 
+  float rps = 1000 * rev_turned / ms_elapsed;
+  if (rps < 10) rps = 10; 
+  //leadscrew.setSpeedInRevolutionsPerSecond(rps);
+  Serial.println(rpm);
+  Serial.println(rps);
   return rpm;
 }
 
@@ -35,19 +36,29 @@ void move_leadscrew(void * parameters) {
   }
 }
 
+/*int leadscrew_tpi = 16;
+float leadscrew_pitch = 1.588;
+float metric_pitch_to_leadscrew_rpm(float thread_pitch, float spindle_rpm) {
+  return spindle_rpm * thread_pitch / leadscrew_pitch;
+}*/
+float leadscrew_pitch = 1.5;
+float thread_pitch = 3;
 
 void read_spindle_rev(void * parameters) {
   for(;;) {
-    ulong now = millis();
-    ulong ms_elapsed = now - encoder_last_read;
-    encoder_last_read = now;
-    int encoder_count = encoder.getCount();
-    //encoder.clearCount();
+    int64_t encoder_count = encoder.getCount();
     const int quadrature_mult = 2;
-    float deg_turned = encoder_count * 360 / (600 * quadrature_mult);
-    float rev_turned = deg_turned / 360;
-    leadscrew.setTargetPositionInRevolutions(rev_turned);
+    float rev_turned = (float)encoder_count / (float)(600 * quadrature_mult);
+    float leadscrew_rev = rev_turned * thread_pitch / leadscrew_pitch;
+    leadscrew.setTargetPositionInRevolutions(leadscrew_rev);
     vTaskDelay(1 / portTICK_PERIOD_MS);
+  }
+}
+
+void render_ui(void * parameters) {
+  for (;;) {
+    ui.draw_rpm(read_spindle_rpm());
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
@@ -56,7 +67,7 @@ void setup() {
 
   leadscrew.connectToPins(2, 13);
   leadscrew.setStepsPerRevolution(1600);
-  float max_rps = 100;
+  float max_rps = 20;
   leadscrew.setSpeedInRevolutionsPerSecond(max_rps);
   leadscrew.setAccelerationInRevolutionsPerSecondPerSecond(max_rps*100);
   
@@ -67,7 +78,8 @@ void setup() {
   encoder_last_read = millis();
   encoder.attachHalfQuad(21, 22);
   //xTaskCreatePinnedToCore(move_leadscrew, "move_leadscrew", 10000, NULL, 1, NULL, 0);
-  xTaskCreate(read_spindle_rev, "read_spindle_rot", 1000, NULL, 2, NULL);
+  xTaskCreate(read_spindle_rev, "read_spindle_rot", 10000, NULL, 1, NULL);
+  xTaskCreate(render_ui, "render_ui", 10000, NULL, 2, NULL);
 }
 
 void loop() {
@@ -80,6 +92,9 @@ void loop() {
   //leadscrew.processMovement();
   if(!leadscrew.motionComplete()) {
     leadscrew.processMovement();
-  }
-
+  } /*else {
+    leadscrew.setCurrentPositionInSteps(0);
+    encoder.clearCount();
+    encoder_last_count = 0;
+  }*/
 }
