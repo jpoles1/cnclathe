@@ -1,0 +1,13 @@
+<html>
+    <body>
+        <script>
+            var ws = new WebSocket('ws://' + location.hostname + ':80/ws');
+            ws.onopen = function() {ws.send('Hello, server');};
+            ws.onmessage = function (evt) {console.log(evt.data);};
+            function sendThreadPitch() {
+                var threadPitch = document.getElementById('threadPitch').value;ws.send(JSON.stringify({thread_pitch: threadPitch}));
+            }
+        </script>
+        <input type='text' id='threadPitch'><button onclick='sendThreadPitch()'>Send</button>
+    </body>
+</html>
