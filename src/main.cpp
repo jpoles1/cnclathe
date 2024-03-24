@@ -50,7 +50,6 @@ float metric_pitch_to_leadscrew_rpm(float thread_pitch, float spindle_rpm) {
 }*/
 float leadscrew_pitch = 1.5;
 float thread_pitch = 3;
-
 void read_spindle_rev(void *parameters)
 {
   for (;;)
@@ -58,7 +57,6 @@ void read_spindle_rev(void *parameters)
     int64_t encoder_count = encoder.getCount();
     const int quadrature_mult = 2;
     float rev_turned = (float)encoder_count / (float)(600 * quadrature_mult);
-    Serial.println(rev_turned);
     float leadscrew_rev = rev_turned * thread_pitch / leadscrew_pitch;
     leadscrew.setTargetPositionInRevolutions(leadscrew_rev);
     vTaskDelay(1 / portTICK_PERIOD_MS);
@@ -90,6 +88,8 @@ void handle_ws_incoming(void *arg, uint8_t *data, size_t len) {
   // If thread_pitch is in the message, update the leadscrew pitch
   if (doc.containsKey("thread_pitch")) {
     thread_pitch = doc["thread_pitch"];
+    encoder.clearCount();
+    leadscrew.setCurrentPositionInRevolutions(0);
     Serial.println(thread_pitch);
   }
   
@@ -108,7 +108,7 @@ void setup() {
   encoder_last_read = millis();
   pinMode(17,INPUT_PULLDOWN );
   pinMode(18, INPUT_PULLDOWN);
-  //encoder.attachHalfQuad(17, 18);
+  encoder.attachHalfQuad(17, 18);
   Serial.println("STARTING UP");
   // xTaskCreatePinnedToCore(move_leadscrew, "move_leadscrew", 10000, NULL, 1, NULL, 0);
   xTaskCreate(read_spindle_rev, "read_spindle_rot", 10000, NULL, 1, NULL);
