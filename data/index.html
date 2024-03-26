@@ -1,13 +1,92 @@
 <html>
+    <head>
+        <style>
+            body {
+                height: 100vh;
+                width: 100vw;    
+                font-family: Arial, sans-serif;
+                margin: 0;
+                padding: 0;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                background-color: #f0f0f0;
+                flex-direction: column; /* Added flex-direction property */
+            }
+            input {
+                margin: 10px 0;
+                padding: 10px;
+                font-size: 1em;
+            }
+            button {
+                padding: 10px 20px;
+                font-size: 1em;
+                background-color: #007BFF;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+            }
+            button:hover {
+                background-color: #0056b3;
+            }
+        </style>
+    </head>
     <body>
         <script>
             var ws = new WebSocket('ws://' + location.hostname + ':80/ws');
-            ws.onopen = function() {ws.send('Hello, server');};
-            ws.onmessage = function (evt) {console.log(evt.data);};
+            ws.onopen = function() {
+                ws.send('Hello, server');
+            };
+            ws.onmessage = function (evt) {
+                var data = JSON.parse(evt.data);
+                if (data.spindle_rpm) {
+                    document.getElementById('spindle_rpm').value = data.spindle_rpm;
+                }
+                if (data.leadscrew_rpm) {
+                    document.getElementById('leadscrew_rpm').value = data.leadscrew_rpm;
+                }
+            };
             function sendThreadPitch() {
-                var threadPitch = document.getElementById('threadPitch').value;ws.send(JSON.stringify({thread_pitch: threadPitch}));
+                var threadPitch = document.getElementById('threadPitch').value;
+                ws.send(JSON.stringify({thread_pitch: threadPitch}));
+            }
+            function updateConnectionStatus(isConnected) {
+                var statusButton = document.getElementById('connectionStatus');
+                if (isConnected) {
+                    statusButton.textContent = 'Connected';
+                    statusButton.style.backgroundColor = '#28a745'; // green
+                } else {
+                    statusButton.textContent = 'Disconnected';
+                    statusButton.style.backgroundColor = '#dc3545'; // red
+                }
             }
         </script>
-        <input type='text' id='threadPitch'><button onclick='sendThreadPitch()'>Send</button>
+        <div style="padding: 5px; text-align: center;">
+            <h1>Lathe ELS</h1>
+            <div style="display: flex; flex-direction: column; background-color: #999; padding: 5px; border-radius: 5px;">
+                <div style="display: flex; flex-direction: row; justify-content: space-around; flex-wrap: wrap;">
+                    <div style="margin: 5px">
+                        <label for="spindle_rpm">Spindle RPM:</label>
+                        <br>
+                        <input type='text' id='spindle_rpm' placeholder='Spindle RPM' readonly>
+                    </div>
+                    <div style="margin: 5px">
+                        <label for="leadscrew_rpm">Leadscrew RPM:</label>
+                        <br>   
+                        <input type='text' id='leadscrew_rpm' placeholder='Leadscrew RPM' readonly>
+                    </div>
+                </div>
+                <button id='connectionStatus' style="background-color: #dc3545;" disabled>Disconnected</button>
+            </div>
+            <div style="margin-top: 15px; background-color: #999; padding: 5px; border-radius: 5px;">
+                <div>
+                    <label for="threadPitch">Thread Pitch:</label>
+                    <br>
+                    <input type='text' id='threadPitch' placeholder='Thread Pitch'>
+                </div>
+                <button onclick='sendThreadPitch()'>Send</button>
+            </div>
+        </div>
     </body>
 </html>

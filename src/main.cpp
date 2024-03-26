@@ -7,58 +7,29 @@
 #include <ArduinoJson.h>
 
 ESP32Encoder encoder;
-ulong encoder_last_read;
 FlexyStepper leadscrew;
 
+unsigned long encoder_last_read;
+unsigned long ws_last_updated;
+
+int ws_update_interval = 1000; // in ms
+
 uint64_t encoder_last_count = 0;
-
-float read_spindle_rpm()
-{
-  uint64_t encoder_count = encoder.getCount();
-  ulong now = millis();
-  ulong ms_elapsed = now - encoder_last_read;
-  encoder_last_read = now;
-  const int quadrature_mult = 2;
-  int steps_moved = encoder_count - encoder_last_count;
-  encoder_last_count = encoder_count;
-  float rev_turned = (float)steps_moved / (float)(600 * quadrature_mult);
-  int rpm = round(1000 * 60 * rev_turned / ms_elapsed);
-  float rps = 1000 * rev_turned / ms_elapsed;
-  if (rps < 10)
-    rps = 10;
-  // leadscrew.setSpeedInRevolutionsPerSecond(rps);
-  Serial.println(rpm);
-  Serial.println(rps);
-  return rpm;
-}
-
-void move_leadscrew(void *parameters)
-{
-  for (;;)
-  {
-    if (!leadscrew.motionComplete())
-    {
-      leadscrew.processMovement();
-    }
-  }
-}
-
-/*int leadscrew_tpi = 16;
-float leadscrew_pitch = 1.588;
-float metric_pitch_to_leadscrew_rpm(float thread_pitch, float spindle_rpm) {
-  return spindle_rpm * thread_pitch / leadscrew_pitch;
-}*/
 float leadscrew_pitch = 1.5;
 float thread_pitch = 3;
+float spindle_rpm = 0;
+
 void read_spindle_rev(void *parameters)
 {
   for (;;)
   {
     int64_t encoder_count = encoder.getCount();
+    leadscrew.setTargetPositionInRevolutions(leadscrew_rev);
     const int quadrature_mult = 2;
     float rev_turned = (float)encoder_count / (float)(600 * quadrature_mult);
+    float spindle_rpm = rev_turned / (millis() - encoder_last_read) * 1000 * 60;
+    encoder_last_read = millis();
     float leadscrew_rev = rev_turned * thread_pitch / leadscrew_pitch;
-    leadscrew.setTargetPositionInRevolutions(leadscrew_rev);
     vTaskDelay(1 / portTICK_PERIOD_MS);
   }
 }
@@ -106,6 +77,7 @@ void setup() {
 
   ESP32Encoder::useInternalWeakPullResistors = puType::down;
   encoder_last_read = millis();
+  ws_last_updated = millis();
   pinMode(17,INPUT_PULLDOWN );
   pinMode(18, INPUT_PULLDOWN);
   encoder.attachHalfQuad(17, 18);
@@ -157,19 +129,16 @@ void setup() {
 
 void loop()
 {
-  /*char print_str[256];
-  float rot = read_spindle_rot();
-  sprintf(print_str, "RPM: %f", rot);
-  Serial.println(print_str);
-  ui.draw_rpm(rot);
-  leadscrew.moveToPositionInRevolutions(read_spindle_rot());*/
-  // leadscrew.processMovement();
-  if (!leadscrew.motionComplete())
-  {
+  if (!leadscrew.motionComplete()) {
     leadscrew.processMovement();
-  } /*else {
-    leadscrew.setCurrentPositionInSteps(0);
-    encoder.clearCount();
-    encoder_last_count = 0;
-  }*/
+  }
+  if (millis() - ws_last_updated > ws_update_interval) {
+    ws_last_updated = millis();
+    DynamicJsonDocument doc(1024);
+    doc["spindle_rpm"] = spindle_rpm;
+    doc["leadscrew_rpm"] = spindle_rpm * thread_pitch / leadscrew_pitch;
+    String output;
+    serializeJson(doc, output);
+    ws.textAll(output.c_str());
+  }
 }
