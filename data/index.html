@@ -34,26 +34,53 @@
     </head>
     <body>
         <script>
-            var ws = new WebSocket('ws://' + location.hostname + ':80/ws');
-            ws.onopen = function() {
-                ws.send('Hello, server');
-            };
-            ws.onmessage = function (evt) {
+            let websocket_uri_override = undefined
+            websocket_uri_override = "ws://192.168.40.223/ws"
+            let thread_pitch = undefined;
+            regen_websocket = () => {
+                ws = new WebSocket(websocket_uri_override || ('ws://' + location.hostname + ':80/ws'));
+                ws.onopen = websocket_open_handler;
+                ws.onclose = websocket_close_handler;
+                ws.onmessage = websocket_msg_handler;
+                ws.onerror = websocket_error_handler;
+            }
+            websocket_close_handler = () => {
+                console.log('Websocket closed');
+                update_connection_status(false);
+                setTimeout(regen_websocket, 1000);
+            }
+            websocket_open_handler = () => {
+                console.log('Websocket opened');
+                update_connection_status(true);
+            }
+            websocket_msg_handler = (evt) => {
                 var data = JSON.parse(evt.data);
-                if (data.spindle_rpm) {
+                console.log(data)
+                if (data.spindle_rpm !== undefined) {
                     document.getElementById('spindle_rpm').value = data.spindle_rpm;
                 }
-                if (data.leadscrew_rpm) {
+                if (data.leadscrew_rpm !== undefined) {
                     document.getElementById('leadscrew_rpm').value = data.leadscrew_rpm;
                 }
-            };
-            function sendThreadPitch() {
-                var threadPitch = document.getElementById('threadPitch').value;
-                ws.send(JSON.stringify({thread_pitch: threadPitch}));
+                if (data.thread_pitch !== undefined) {
+                    // If we have not yet set the thread_pitch this session, update the input field from the hardware
+                    if (thread_pitch === undefined) {
+                        thread_pitch = data.thread_pitch;
+                        document.getElementById('threadPitch').value = thread_pitch;
+                    }
+                }
             }
-            function updateConnectionStatus(isConnected) {
+            websocket_error_handler = (evt) => {
+                console.log('Websocket error:', evt);
+                update_connection_status(false);
+            }
+            function send_thread_pitch() {
+                thread_pitch = document.getElementById('threadPitch').value;
+                ws.send(JSON.stringify({thread_pitch: thread_pitch}));
+            }
+            function update_connection_status(is_connected) {
                 var statusButton = document.getElementById('connectionStatus');
-                if (isConnected) {
+                if (is_connected) {
                     statusButton.textContent = 'Connected';
                     statusButton.style.backgroundColor = '#28a745'; // green
                 } else {
@@ -61,6 +88,8 @@
                     statusButton.style.backgroundColor = '#dc3545'; // red
                 }
             }
+            regen_websocket();
+            
         </script>
         <div style="padding: 5px; text-align: center;">
             <h1>Lathe ELS</h1>
@@ -77,7 +106,7 @@
                         <input type='text' id='leadscrew_rpm' placeholder='Leadscrew RPM' readonly>
                     </div>
                 </div>
-                <button id='connectionStatus' style="background-color: #dc3545;" disabled>Disconnected</button>
+                <button id='connectionStatus' style="background-color: #007BFF;" disabled>Connecting</button>
             </div>
             <div style="margin-top: 15px; background-color: #999; padding: 5px; border-radius: 5px;">
                 <div>

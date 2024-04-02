@@ -9,27 +9,36 @@
 ESP32Encoder encoder;
 FlexyStepper leadscrew;
 
-unsigned long encoder_last_read;
+const int quadrature_mult = 2;
+const float leadscrew_pitch = 1.5;
+
+unsigned long encoder_last_rpm_time;
 unsigned long ws_last_updated;
 
 int ws_update_interval = 1000; // in ms
 
-uint64_t encoder_last_count = 0;
-float leadscrew_pitch = 1.5;
-float thread_pitch = 3;
+bool leadscrew_direction_invert = true; // Set to true if the leadscrew moves in the opposite direction of the spindle
+
+int64_t encoder_last_rpm_count = 0;
+float thread_pitch = 1;
 float spindle_rpm = 0;
+
+void calc_spindle_rpm() {
+    int64_t encoder_count = encoder.getCount();
+    float rev_turned_since_last = (float)(encoder_count - encoder_last_rpm_count) / (float)(600 * quadrature_mult);
+    spindle_rpm = rev_turned_since_last  * 1000 * 60 / (millis() - encoder_last_rpm_time);
+    encoder_last_rpm_time = millis();
+    encoder_last_rpm_count = encoder_count;
+}
 
 void read_spindle_rev(void *parameters)
 {
   for (;;)
   {
-    int64_t encoder_count = encoder.getCount();
-    leadscrew.setTargetPositionInRevolutions(leadscrew_rev);
-    const int quadrature_mult = 2;
+    int64_t encoder_count = encoder.getCount()  * (leadscrew_direction_invert ? -1 : 1);
     float rev_turned = (float)encoder_count / (float)(600 * quadrature_mult);
-    float spindle_rpm = rev_turned / (millis() - encoder_last_read) * 1000 * 60;
-    encoder_last_read = millis();
     float leadscrew_rev = rev_turned * thread_pitch / leadscrew_pitch;
+    leadscrew.setTargetPositionInRevolutions(leadscrew_rev);
     vTaskDelay(1 / portTICK_PERIOD_MS);
   }
 }
@@ -66,9 +75,21 @@ void handle_ws_incoming(void *arg, uint8_t *data, size_t len) {
   
 }
 
+void send_ws_update() {
+    calc_spindle_rpm();
+    ws_last_updated = millis();
+    DynamicJsonDocument doc(1024);
+    doc["spindle_rpm"] = round(spindle_rpm * 100) / 100.0;
+    doc["leadscrew_rpm"] = round(spindle_rpm * thread_pitch / leadscrew_pitch * 100) / 100.0;
+    doc["thread_pitch"] = thread_pitch;
+    String output;
+    serializeJson(doc, output);
+    ws.textAll(output.c_str());
+    //Serial.println(output);
+}
+
 void setup() {
   Serial.begin(115200);
-
   leadscrew.connectToPins(6, 7);
   leadscrew.setStepsPerRevolution(1600);
   float max_rps = 20;
@@ -76,7 +97,7 @@ void setup() {
   leadscrew.setAccelerationInRevolutionsPerSecondPerSecond(max_rps * 100);
 
   ESP32Encoder::useInternalWeakPullResistors = puType::down;
-  encoder_last_read = millis();
+  encoder_last_rpm_time = millis();
   ws_last_updated = millis();
   pinMode(17,INPUT_PULLDOWN );
   pinMode(18, INPUT_PULLDOWN);
@@ -100,6 +121,7 @@ void setup() {
       switch (type) {
         case WS_EVT_CONNECT:
           Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+          send_ws_update();
           break;
         case WS_EVT_DISCONNECT:
           Serial.printf("WebSocket client #%u disconnected\n", client->id());
@@ -133,12 +155,6 @@ void loop()
     leadscrew.processMovement();
   }
   if (millis() - ws_last_updated > ws_update_interval) {
-    ws_last_updated = millis();
-    DynamicJsonDocument doc(1024);
-    doc["spindle_rpm"] = spindle_rpm;
-    doc["leadscrew_rpm"] = spindle_rpm * thread_pitch / leadscrew_pitch;
-    String output;
-    serializeJson(doc, output);
-    ws.textAll(output.c_str());
+    send_ws_update();
   }
 }
