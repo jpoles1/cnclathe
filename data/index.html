@@ -1,121 +1,166 @@
 <html>
-    <head>
-        <style>
-            body {
-                height: 100vh;
-                width: 100vw;    
-                font-family: Arial, sans-serif;
-                margin: 0;
-                padding: 0;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                background-color: #f0f0f0;
-                flex-direction: column; /* Added flex-direction property */
+
+<head>
+    <style>
+        body {
+            height: 100vh;
+            width: 100vw;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #f0f0f0;
+            flex-direction: column;
+            /* Added flex-direction property */
+        }
+
+        input {
+            margin: 10px 0;
+            padding: 10px;
+            font-size: 1em;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 1em;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+        .jog-speed-buttons {
+            display: flex;
+            flex-direction: row;
+            justify-content: space-around;
+            margin: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <script>
+        let websocket_uri_override = undefined
+        websocket_uri_override = "ws://192.168.40.223/ws"
+        let thread_pitch = undefined;
+        regen_websocket = () => {
+            ws = new WebSocket(websocket_uri_override || ('ws://' + location.hostname + ':80/ws'));
+            ws.onopen = websocket_open_handler;
+            ws.onclose = websocket_close_handler;
+            ws.onmessage = websocket_msg_handler;
+            ws.onerror = websocket_error_handler;
+        }
+        websocket_close_handler = () => {
+            console.log('Websocket closed');
+            update_connection_status(false);
+            setTimeout(regen_websocket, 1000);
+        }
+        websocket_open_handler = () => {
+            console.log('Websocket opened');
+            update_connection_status(true);
+        }
+        websocket_msg_handler = (evt) => {
+            var data = JSON.parse(evt.data);
+            console.log(data)
+            if (data.spindle_rpm !== undefined) {
+                document.getElementById('spindle_rpm').value = data.spindle_rpm;
             }
-            input {
-                margin: 10px 0;
-                padding: 10px;
-                font-size: 1em;
+            if (data.leadscrew_rpm !== undefined) {
+                document.getElementById('leadscrew_rpm').value = data.leadscrew_rpm;
             }
-            button {
-                padding: 10px 20px;
-                font-size: 1em;
-                background-color: #007BFF;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                cursor: pointer;
-            }
-            button:hover {
-                background-color: #0056b3;
-            }
-        </style>
-    </head>
-    <body>
-        <script>
-            let websocket_uri_override = undefined
-            websocket_uri_override = "ws://192.168.40.223/ws"
-            let thread_pitch = undefined;
-            regen_websocket = () => {
-                ws = new WebSocket(websocket_uri_override || ('ws://' + location.hostname + ':80/ws'));
-                ws.onopen = websocket_open_handler;
-                ws.onclose = websocket_close_handler;
-                ws.onmessage = websocket_msg_handler;
-                ws.onerror = websocket_error_handler;
-            }
-            websocket_close_handler = () => {
-                console.log('Websocket closed');
-                update_connection_status(false);
-                setTimeout(regen_websocket, 1000);
-            }
-            websocket_open_handler = () => {
-                console.log('Websocket opened');
-                update_connection_status(true);
-            }
-            websocket_msg_handler = (evt) => {
-                var data = JSON.parse(evt.data);
-                console.log(data)
-                if (data.spindle_rpm !== undefined) {
-                    document.getElementById('spindle_rpm').value = data.spindle_rpm;
-                }
-                if (data.leadscrew_rpm !== undefined) {
-                    document.getElementById('leadscrew_rpm').value = data.leadscrew_rpm;
-                }
-                if (data.thread_pitch !== undefined) {
-                    // If we have not yet set the thread_pitch this session, update the input field from the hardware
-                    if (thread_pitch === undefined) {
-                        thread_pitch = data.thread_pitch;
-                        document.getElementById('threadPitch').value = thread_pitch;
-                    }
-                }
-            }
-            websocket_error_handler = (evt) => {
-                console.log('Websocket error:', evt);
-                update_connection_status(false);
-            }
-            function send_thread_pitch() {
-                thread_pitch = document.getElementById('threadPitch').value;
-                ws.send(JSON.stringify({thread_pitch: thread_pitch}));
-            }
-            function update_connection_status(is_connected) {
-                var statusButton = document.getElementById('connectionStatus');
-                if (is_connected) {
-                    statusButton.textContent = 'Connected';
-                    statusButton.style.backgroundColor = '#28a745'; // green
-                } else {
-                    statusButton.textContent = 'Disconnected';
-                    statusButton.style.backgroundColor = '#dc3545'; // red
+            if (data.thread_pitch !== undefined) {
+                // If we have not yet set the thread_pitch this session, update the input field from the hardware
+                if (thread_pitch === undefined) {
+                    thread_pitch = data.thread_pitch;
+                    document.getElementById('threadPitch').value = thread_pitch;
                 }
             }
-            regen_websocket();
-            
-        </script>
-        <div style="padding: 5px; text-align: center;">
-            <h1>Lathe ELS</h1>
-            <div style="display: flex; flex-direction: column; background-color: #999; padding: 5px; border-radius: 5px;">
-                <div style="display: flex; flex-direction: row; justify-content: space-around; flex-wrap: wrap;">
-                    <div style="margin: 5px">
-                        <label for="spindle_rpm">Spindle RPM:</label>
-                        <br>
-                        <input type='text' id='spindle_rpm' placeholder='Spindle RPM' readonly>
-                    </div>
-                    <div style="margin: 5px">
-                        <label for="leadscrew_rpm">Leadscrew RPM:</label>
-                        <br>   
-                        <input type='text' id='leadscrew_rpm' placeholder='Leadscrew RPM' readonly>
-                    </div>
-                </div>
-                <button id='connectionStatus' style="background-color: #007BFF;" disabled>Connecting</button>
-            </div>
-            <div style="margin-top: 15px; background-color: #999; padding: 5px; border-radius: 5px;">
-                <div>
-                    <label for="threadPitch">Thread Pitch:</label>
+        }
+        websocket_error_handler = (evt) => {
+            console.log('Websocket error:', evt);
+            update_connection_status(false);
+        }
+        function send_thread_pitch() {
+            thread_pitch = document.getElementById('threadPitch').value;
+            ws.send(JSON.stringify({ thread_pitch: thread_pitch }));
+        }
+        function update_connection_status(is_connected) {
+            var statusButton = document.getElementById('connectionStatus');
+            if (is_connected) {
+                statusButton.textContent = 'Connected';
+                statusButton.style.backgroundColor = '#28a745'; // green
+            } else {
+                statusButton.textContent = 'Disconnected';
+                statusButton.style.backgroundColor = '#dc3545'; // red
+            }
+        }
+        regen_websocket();
+
+        let xjog_speed = 0.1;
+        function set_xjog_speed(speed) {
+            console.log(speed)
+            xjog_speed = speed;
+            document.getElementById('xjog-speed').value = speed;
+        }
+        function xjog(dir_mult) {
+            if (dir_mult != 1 && dir_mult != -1) {
+                console.error("Invalid direction multiplier: " + dir_mult);
+                dir_mult = 1;
+            }
+            ws.send(JSON.stringify({ xjog: xjog_speed * dir_mult }));
+        }
+    </script>
+    <div style="padding: 5px; text-align: center;">
+        <h1>Lathe ELS</h1>
+        <div style="display: flex; flex-direction: column; background-color: #999; padding: 5px; border-radius: 5px;">
+            <div style="display: flex; flex-direction: row; justify-content: space-around; flex-wrap: wrap;">
+                <div style="margin: 5px">
+                    <label for="spindle_rpm">Spindle RPM:</label>
                     <br>
-                    <input type='text' id='threadPitch' placeholder='Thread Pitch'>
+                    <input type='text' id='spindle_rpm' placeholder='Spindle RPM' readonly>
                 </div>
-                <button onclick='sendThreadPitch()'>Send</button>
+                <div style="margin: 5px">
+                    <label for="leadscrew_rpm">Leadscrew RPM:</label>
+                    <br>
+                    <input type='text' id='leadscrew_rpm' placeholder='Leadscrew RPM' readonly>
+                </div>
+            </div>
+            <button id='connectionStatus' style="background-color: #007BFF;" disabled>Connecting</button>
+        </div>
+        <div style="margin-top: 15px; background-color: #999; padding: 5px; border-radius: 5px;">
+            <div>
+                <label for="threadPitch">Thread Pitch:</label>
+                <br>
+                <input type='text' id='threadPitch' placeholder='Thread Pitch'>
+            </div>
+            <button onclick='send_thread_pitch()'>Send</button>
+        </div>
+        <div style="margin-top: 15px; background-color: #999; padding: 5px; border-radius: 5px;">
+            <h2>X Jog Controls</h2>
+            <div>
+                <div class="jog-direction-buttons">
+                    <button class="jog-direction-button" onclick="xjog(-1)">-</button>
+                    <input id="xjog-speed" value="0.1" step="0.1" min="0" style="width: 100px;" oninput="set_xjog_speed(parseFloat(document.getElementById('xjog-speed').value))"/>
+                    <button class="jog-direction-button" onclick="xjog(1)">+</button>
+                </div>
+                <div class="jog-speed-buttons">
+                    <button class="jog-speed-button" onclick="set_xjog_speed(0.1)">0.1 mm</button>
+                    <button class="jog-speed-button" onclick="set_xjog_speed(0.25)">0.25 mm</button>
+                    <button class="jog-speed-button" onclick="set_xjog_speed(0.5)">0.5 mm</button>
+                    <button class="jog-speed-button" onclick="set_xjog_speed(1)">1 mm</button>
+                </div>
+            </div>
+            <div class="jog-speed-buttons">
+                <button onclick="ws.send(JSON.stringify({ halt: 1 }))" style="background-color: #dc3545;">HALT</button>
             </div>
         </div>
-    </body>
+    </div>
+</body>
+
 </html>

@@ -8,6 +8,7 @@
 
 ESP32Encoder encoder;
 FlexyStepper leadscrew;
+FlexyStepper xaxis;
 
 const int quadrature_mult = 2;
 const float leadscrew_pitch = 1.5;
@@ -66,13 +67,20 @@ void handle_ws_incoming(void *arg, uint8_t *data, size_t len) {
   DynamicJsonDocument doc(1024);
   deserializeJson(doc, msg);
   // If thread_pitch is in the message, update the leadscrew pitch
+  if (doc.containsKey("halt")) {
+    xaxis.setTargetPositionRelativeInMillimeters(0);
+    return;
+  }
   if (doc.containsKey("thread_pitch")) {
     thread_pitch = doc["thread_pitch"];
     encoder.clearCount();
     leadscrew.setCurrentPositionInRevolutions(0);
     Serial.println(thread_pitch);
   }
-  
+  if (doc.containsKey("xjog")) {
+    float xjog = doc["xjog"];
+    xaxis.setTargetPositionRelativeInMillimeters(xjog);
+  }
 }
 
 void send_ws_update() {
@@ -90,11 +98,22 @@ void send_ws_update() {
 
 void setup() {
   Serial.begin(115200);
+
+  //Leadscrew stepper setup
   leadscrew.connectToPins(6, 7);
   leadscrew.setStepsPerRevolution(1600);
-  float max_rps = 20;
-  leadscrew.setSpeedInRevolutionsPerSecond(max_rps);
-  leadscrew.setAccelerationInRevolutionsPerSecondPerSecond(max_rps * 100);
+  float leadscrew_max_rps = 20;
+  leadscrew.setSpeedInRevolutionsPerSecond(leadscrew_max_rps);
+  leadscrew.setAccelerationInRevolutionsPerSecondPerSecond(leadscrew_max_rps * 100);
+
+  //X-axis stepper setup
+  xaxis.connectToPins(2,21);
+  xaxis.setStepsPerRevolution(360 / 0.35);
+  xaxis.setStepsPerMillimeter(360 / 0.35);
+  float xaxis_max_rpm = 15;
+  float xaxis_max_rps = xaxis_max_rpm / 60;
+  xaxis.setSpeedInRevolutionsPerSecond(xaxis_max_rps);
+  xaxis.setAccelerationInRevolutionsPerSecondPerSecond(xaxis_max_rps * 100);
 
   ESP32Encoder::useInternalWeakPullResistors = puType::down;
   encoder_last_rpm_time = millis();
@@ -153,6 +172,9 @@ void loop()
 {
   if (!leadscrew.motionComplete()) {
     leadscrew.processMovement();
+  }
+  if (!xaxis.motionComplete()) {
+    xaxis.processMovement();
   }
   if (millis() - ws_last_updated > ws_update_interval) {
     send_ws_update();
